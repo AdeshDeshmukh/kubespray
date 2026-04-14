@@ -53,19 +53,32 @@ arch_alt_name = {
 
 # Download support added
 def download_file(url: str, dest_path: Path, retries: int = 3) -> None:
-    """Download a file from a URL to a local path with retries."""
-    for attempt in range(retries):
+    """Download a file from a URL to a local path with automatic retries.
+    
+    Args:
+        url: The URL to download from
+        dest_path: The local file path to save to
+        retries: Number of retry attempts (default: 3)
+        
+    Raises:
+        requests.RequestException: If download fails after all retries
+        IOError: If unable to write to dest_path
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    for attempt in range(1, retries + 1):
         try:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
             with open(dest_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            logger.info(f"Downloaded {url} to {dest_path}")
+                    if chunk:
+                        f.write(chunk)
+            logger.info("Successfully downloaded %s to %s", url, dest_path)
             return
-        except Exception as e:
-            logger.warning(f"Attempt {attempt+1} failed: {e}")
-            if attempt == retries - 1:
+        except requests.RequestException as e:
+            logger.warning("Download attempt %d failed: %s", attempt, e)
+            if attempt == retries:
                 raise
 
 # TODO: helm_archive: PGP signatures
@@ -349,12 +362,6 @@ def main():
         {k: components.infos[k] for k in (set(args.only) - set(args.exclude))}
     )
 
+
 if __name__ == "__main__":
-    # Simple test: download a small file from the internet
-    test_url = "https://www.google.com/robots.txt"
-    test_dest = Path("/tmp/robots.txt")
-    try:
-        download_file(test_url, test_dest)
-        print(f"Download test succeeded: {test_dest.exists()} (see {test_dest})")
-    except Exception as e:
-        print(f"Download test failed: {e}")
+    main()
