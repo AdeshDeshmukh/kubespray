@@ -8,6 +8,7 @@ import sys
 import os
 import logging
 import subprocess
+import asyncio
 
 from itertools import groupby, chain
 from more_itertools import partition
@@ -21,7 +22,7 @@ from packaging.version import Version, InvalidVersion
 from importlib.resources import files
 from pathlib import Path
 
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 from . import components
 
@@ -80,6 +81,47 @@ def download_file(url: str, dest_path: Path, retries: int = 3) -> None:
             logger.warning("Download attempt %d failed: %s", attempt, e)
             if attempt == retries:
                 raise
+
+
+async def download_file_async(url: str, dest_path: Path, retries: int = 3) -> None:
+    """Download a file asynchronously using thread pool executor.
+    
+    This runs the blocking download_file() in a thread pool, allowing
+    multiple downloads to happen concurrently without blocking the event loop.
+    
+    Args:
+        url: The URL to download from
+        dest_path: The local file path to save to
+        retries: Number of retry attempts (default: 3)
+    """
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None, 
+        download_file, 
+        url, 
+        dest_path, 
+        retries
+    )
+
+
+async def download_files_batch(urls_with_paths: List[tuple]) -> None:
+    """Download multiple files concurrently.
+    
+    Args:
+        urls_with_paths: List of (url, dest_path) tuples
+        
+    Example:
+        urls = [
+            ("https://example.com/file1.tar.gz", Path("/tmp/file1.tar.gz")),
+            ("https://example.com/file2.tar.gz", Path("/tmp/file2.tar.gz")),
+        ]
+        await download_files_batch(urls)
+    """
+    tasks = [
+        download_file_async(url, dest_path)
+        for url, dest_path in urls_with_paths
+    ]
+    await asyncio.gather(*tasks)
 
 # TODO: helm_archive: PGP signatures
 # TODO: different verification methods (gpg, cosign) (needs download role changes) (or verify the sig in this script and only use the checksum in the playbook)
