@@ -50,12 +50,27 @@ arch_alt_name = {
     "no_arch": None,
 }
 
-# TODO: downloads not supported
-# helm_archive: PGP signatures
 
-# TODO:
-# different verification methods (gpg, cosign) ( needs download role changes) (or verify the sig in this script and only use the checksum in the playbook)
-# perf improvements (async)
+# Download support added
+def download_file(url: str, dest_path: Path, retries: int = 3) -> None:
+    """Download a file from a URL to a local path with retries."""
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            with open(dest_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"Downloaded {url} to {dest_path}")
+            return
+        except Exception as e:
+            logger.warning(f"Attempt {attempt+1} failed: {e}")
+            if attempt == retries - 1:
+                raise
+
+# TODO: helm_archive: PGP signatures
+# TODO: different verification methods (gpg, cosign) (needs download role changes) (or verify the sig in this script and only use the checksum in the playbook)
+# TODO: perf improvements (async)
 
 
 def download_hash(downloads: {str: {str: Any}}) -> None:
