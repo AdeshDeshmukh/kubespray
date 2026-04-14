@@ -348,3 +348,13 @@ def main():
     download_hash(
         {k: components.infos[k] for k in (set(args.only) - set(args.exclude))}
     )
+
+if __name__ == "__main__":
+    # Simple test: download a small file from the internet
+    test_url = "https://www.google.com/robots.txt"
+    test_dest = Path("/tmp/robots.txt")
+    try:
+        download_file(test_url, test_dest)
+        print(f"Download test succeeded: {test_dest.exists()} (see {test_dest})")
+    except Exception as e:
+        print(f"Download test failed: {e}")
