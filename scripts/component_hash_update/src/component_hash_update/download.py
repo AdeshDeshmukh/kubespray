@@ -8,6 +8,7 @@ import sys
 import os
 import logging
 import subprocess
+import asyncio
 
 from itertools import groupby, chain
 from more_itertools import partition
@@ -21,7 +22,7 @@ from packaging.version import Version, InvalidVersion
 from importlib.resources import files
 from pathlib import Path
 
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 from . import components
 
@@ -50,12 +51,81 @@ arch_alt_name = {
     "no_arch": None,
 }
 
-# TODO: downloads not supported
-# helm_archive: PGP signatures
 
-# TODO:
-# different verification methods (gpg, cosign) ( needs download role changes) (or verify the sig in this script and only use the checksum in the playbook)
-# perf improvements (async)
+# Download support added
+def download_file(url: str, dest_path: Path, retries: int = 3) -> None:
+    """Download a file from a URL to a local path with automatic retries.
+    
+    Args:
+        url: The URL to download from
+        dest_path: The local file path to save to
+        retries: Number of retry attempts (default: 3)
+        
+    Raises:
+        requests.RequestException: If download fails after all retries
+        IOError: If unable to write to dest_path
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            with open(dest_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            logger.info("Successfully downloaded %s to %s", url, dest_path)
+            return
+        except requests.RequestException as e:
+            logger.warning("Download attempt %d failed: %s", attempt, e)
+            if attempt == retries:
+                raise
+
+
+async def download_file_async(url: str, dest_path: Path, retries: int = 3) -> None:
+    """Download a file asynchronously using thread pool executor.
+    
+    This runs the blocking download_file() in a thread pool, allowing
+    multiple downloads to happen concurrently without blocking the event loop.
+    
+    Args:
+        url: The URL to download from
+        dest_path: The local file path to save to
+        retries: Number of retry attempts (default: 3)
+    """
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None, 
+        download_file, 
+        url, 
+        dest_path, 
+        retries
+    )
+
+
+async def download_files_batch(urls_with_paths: List[tuple]) -> None:
+    """Download multiple files concurrently.
+    
+    Args:
+        urls_with_paths: List of (url, dest_path) tuples
+        
+    Example:
+        urls = [
+            ("https://example.com/file1.tar.gz", Path("/tmp/file1.tar.gz")),
+            ("https://example.com/file2.tar.gz", Path("/tmp/file2.tar.gz")),
+        ]
+        await download_files_batch(urls)
+    """
+    tasks = [
+        download_file_async(url, dest_path)
+        for url, dest_path in urls_with_paths
+    ]
+    await asyncio.gather(*tasks)
+
+# TODO: helm_archive: PGP signatures
+# TODO: different verification methods (gpg, cosign) (needs download role changes) (or verify the sig in this script and only use the checksum in the playbook)
+# TODO: perf improvements (async)
 
 
 def download_hash(downloads: {str: {str: Any}}) -> None:
@@ -333,3 +403,7 @@ def main():
     download_hash(
         {k: components.infos[k] for k in (set(args.only) - set(args.exclude))}
     )
+
+
+if __name__ == "__main__":
+    main()
